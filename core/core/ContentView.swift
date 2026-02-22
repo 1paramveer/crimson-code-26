@@ -38,7 +38,7 @@ struct ContentView: View {
 
     init() {
         let sdk = SmartSpectraSwiftSDK.shared
-        sdk.setApiKey("zzdWamBg835EPXHJFEtQrsBFSAm2wmCaBTFLPNfb")
+        sdk.setApiKey("JvBdaNgMiM25jOOyTntqy5OZXT6ZTJ4T3hdRzAB2")
         sdk.setSmartSpectraMode(.continuous)
         sdk.setCameraPosition(.front)
         sdk.setRecordingDelay(0)
@@ -58,7 +58,7 @@ struct ContentView: View {
                 // MARK: — Header
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("COPCAM")
+                        Text("Health Cam")
                             .font(.system(size: 22, weight: .black, design: .monospaced))
                             .foregroundColor(.white)
                         Text("Real-Time Subject Monitor")

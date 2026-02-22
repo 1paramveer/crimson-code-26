@@ -43,7 +43,7 @@ actor VitalsBuffer {
 // MARK: — ElevenLabsService
 @MainActor
 class ElevenLabsService: ObservableObject {
-    let agentId = "agent_9101kj219qhee47tjxbf3w6vs5pa"
+    let agentId = "agent_2801kj36rmw7feyvmdn2ksp5nakt"
 
     @Published var isConnected = false
     @Published var agentSpeaking = false
