@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+*.mp4
+/tmp/
+flask.log

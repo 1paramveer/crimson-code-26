@@ -4,9 +4,17 @@ import base64
 import geocoder
 import datetime
 import json
+import os
+from dotenv import load_dotenv
 
-API_KEY = "qkAZNqw1IfKmOzokdEqt"
-URL = "https://serverless.roboflow.com/amans-workspace-gwpof/workflows/find-potholes"
+load_dotenv()
+
+API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
+URL = os.environ.get("ROBOFLOW_WORKFLOW_URL", "https://serverless.roboflow.com/amans-workspace-gwpof/workflows/find-potholes")
+
+if not API_KEY:
+    print("⚠️  ROBOFLOW_API_KEY not set. Copy .env.example to .env and add your key.")
+    exit(1)
 
 VIDEO_PATH = "tested.mp4"
 
@@ -55,6 +63,17 @@ while cap.isOpened():
                 # Get location
                 g = geocoder.ip('me')
                 lat, lng = g.latlng
+
+                # Snap to nearest road so marker sits on road in Leaflet
+                try:
+                    snap_url = f"http://router.project-osrm.org/nearest/v1/driving/{lng},{lat}"
+                    snap_resp = requests.get(snap_url, timeout=3)
+                    snap_data = snap_resp.json()
+                    if "waypoints" in snap_data and snap_data["waypoints"]:
+                        wp = snap_data["waypoints"][0]
+                        lat, lng = wp["location"][1], wp["location"][0]
+                except Exception:
+                    pass  # Use original coordinates if snapping fails
 
                 timestamp = datetime.datetime.now().isoformat()
 

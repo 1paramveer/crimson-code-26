@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RoadGuardian AI</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: #0a0f1a;
+            color: #e2e8f0;
+        }
+
+        #map { height: 100vh; }
+
+        /* ── Dashboard panel ── */
+        .dashboard {
+            position: absolute;
+            z-index: 1000;
+            top: 16px;
+            left: 16px;
+            padding: 20px;
+            width: 320px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            background: linear-gradient(145deg, rgba(15,23,42,0.92), rgba(30,41,59,0.88));
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 16px;
+            border: 1px solid rgba(99,102,241,0.2);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5), 0 0 60px rgba(99,102,241,0.06);
+        }
+
+        .dashboard::-webkit-scrollbar { width: 4px; }
+        .dashboard::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 4px; }
+
+        .title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            background: linear-gradient(135deg, #818cf8, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.3px;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 14px;
+        }
+
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(99,102,241,0.3), transparent);
+            margin: 12px 0;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .stat span {
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .stat .label-icon { margin-right: 6px; }
+
+        .risk-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .risk-low { background: rgba(74,222,128,0.15); color: #4ade80; }
+        .risk-moderate { background: rgba(251,146,60,0.15); color: #fb923c; }
+        .risk-high { background: rgba(248,113,113,0.15); color: #f87171; }
+
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #64748b;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        /* ── Search inputs ── */
+        .search-section { margin-bottom: 10px; }
+
+        .search-group {
+            position: relative;
+            margin-bottom: 6px;
+        }
+
+        .search-group input {
+            width: 100%;
+            padding: 8px 12px 8px 30px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(99,102,241,0.15);
+            border-radius: 10px;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-group input:focus {
+            border-color: rgba(99,102,241,0.5);
+        }
+
+        .search-group input::placeholder { color: #475569; }
+
+        .search-group .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            opacity: 0.5;
+        }
+
+        .search-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e293b;
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 2000;
+            display: none;
+        }
+
+        .search-suggestions div {
+            padding: 8px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .search-suggestions div:hover {
+            background: rgba(99,102,241,0.1);
+            color: #e2e8f0;
+        }
+
+        .search-suggestions div:last-child { border-bottom: none; }
+
+        /* ── Toolbar row ── */
+        .toolbar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .toolbar button, .toolbar select {
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(99,102,241,0.2);
+            background: rgba(255,255,255,0.05);
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: auto;
+            margin-top: 0;
+        }
+
+        .toolbar button:hover, .toolbar select:hover {
+            border-color: rgba(99,102,241,0.4);
+            color: #e2e8f0;
+        }
+
+        .toolbar button.active {
+            background: rgba(99,102,241,0.15);
+            border-color: #818cf8;
+            color: #818cf8;
+        }
+
+        .toolbar select {
+            -webkit-appearance: none;
+            appearance: none;
+            padding-right: 20px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath fill='%2394a3b8' d='M0 0l4 5 4-5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+        }
+
+        .toolbar select option {
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+
+        /* ── Alt route panel ── */
+        .alt-panel {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(99,102,241,0.08);
+            border-radius: 12px;
+            border: 1px solid rgba(99,102,241,0.2);
+        }
+
+        .alt-panel .alt-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #818cf8;
+            margin-bottom: 8px;
+        }
+
+        .alt-panel .stat { font-size: 12px; margin-bottom: 4px; }
+
+        .comparison {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .comparison .old { color: #f87171; text-decoration: line-through; opacity: 0.7; }
+        .comparison .arrow { color: #64748b; }
+        .comparison .new { color: #4ade80; font-weight: 600; }
+
+        /* ── Analytics panel ── */
+        .analytics-panel {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(99,102,241,0.06);
+            border-radius: 12px;
+            border: 1px solid rgba(99,102,241,0.15);
+        }
+
+        .analytics-panel .panel-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #818cf8;
+            margin-bottom: 8px;
+        }
+
+        .analytics-panel canvas {
+            max-height: 140px;
+            width: 100% !important;
+        }
+
+        .analytics-stats {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .analytics-stats .mini-stat {
+            flex: 1;
+            text-align: center;
+            padding: 6px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+        }
+
+        .mini-stat .val {
+            font-size: 18px;
+            font-weight: 700;
+            color: #818cf8;
+            display: block;
+        }
+
+        .mini-stat .lbl {
+            font-size: 10px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        /* ── Buttons ── */
+        button {
+            margin-top: 10px;
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        button:active { transform: scale(0.97); }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            color: white;
+            box-shadow: 0 2px 10px rgba(99,102,241,0.3);
+        }
+
+        .btn-primary:hover { box-shadow: 0 4px 20px rgba(99,102,241,0.4); }
+
+        .btn-safe {
+            background: linear-gradient(135deg, #22c55e, #4ade80);
+            color: #052e16;
+            box-shadow: 0 2px 10px rgba(34,197,94,0.3);
+        }
+
+        .btn-safe:hover { box-shadow: 0 4px 20px rgba(34,197,94,0.4); }
+
+        .btn-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-row button { flex: 1; }
+
+        /* ── Map overrides ── */
+        .leaflet-tile-pane { filter: saturate(0.85) brightness(0.95); }
+        .leaflet-tile-pane.dark-tiles { filter: brightness(0.7) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7); }
+
+        .leaflet-popup-content-wrapper {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 12px;
+            border: 1px solid rgba(99,102,241,0.2);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        .leaflet-popup-tip { background: #1e293b; }
+
+        .leaflet-popup-content {
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .popup-title {
+            font-weight: 600;
+            color: #818cf8;
+            margin-bottom: 4px;
+        }
+
+        /* Report mode cursor */
+        .report-mode .leaflet-container { cursor: crosshair !important; }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            padding: 10px 20px;
+            background: #1e293b;
+            border: 1px solid rgba(99,102,241,0.3);
+            border-radius: 10px;
+            color: #e2e8f0;
+            font-size: 12px;
+            font-family: 'Inter', sans-serif;
+            z-index: 9999;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+<div class="dashboard">
+    <div class="title">🛡 RoadGuardian AI</div>
+    <div class="subtitle">Search addresses or click map to route</div>
+
+    <!-- ── Address search ── -->
+    <div class="search-section">
+        <div class="search-group">
+            <span class="search-icon">🟢</span>
+            <input type="text" id="searchStart" placeholder="Start address..." autocomplete="off">
+            <div class="search-suggestions" id="suggestStart"></div>
+        </div>
+        <div class="search-group">
+            <span class="search-icon">🔴</span>
+            <input type="text" id="searchEnd" placeholder="Destination address..." autocomplete="off">
+            <div class="search-suggestions" id="suggestEnd"></div>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ── Toolbar ── -->
+    <div class="toolbar">
+        <button id="btnHeatmap" onclick="toggleHeatmap()" title="Toggle heatmap">🌡 Heat</button>
+        <button id="btnReport" onclick="toggleReportMode()" title="Report a pothole">📍 Report</button>
+        <button id="btnDarkMap" onclick="toggleDarkMap()" title="Toggle dark map">🌙 Dark</button>
+        <button id="btnChart" onclick="toggleAnalytics()" title="Analytics">📈 Stats</button>
+        <select id="timeFilter" onchange="applyTimeFilter()">
+            <option value="">All time</option>
+            <option value="24h">Last 24h</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+        </select>
+    </div>
+
+    <!-- ── Stats ── -->
+    <div class="stat"><span class="label-icon">📊</span> Total Reports <span id="totalReports">{{ total_reports }}</span></div>
+    <div class="stat"><span class="label-icon">🕳️</span> Route Potholes <span id="routeCount">0</span></div>
+    <div class="stat"><span class="label-icon">📏</span> Distance <span id="routeDist">—</span></div>
+    <div class="stat"><span class="label-icon">⚠️</span> Risk Level <span id="riskLevel"><span class="risk-badge risk-low">N/A</span></span></div>
+
+    <!-- ── Alt route ── -->
+    <div id="altInfo" class="alt-panel">
+        <div class="alt-title">🛡 Safer Alternative Found</div>
+        <div class="comparison">
+            <span>Potholes:</span>
+            <span class="old" id="primaryCount">0</span>
+            <span class="arrow">→</span>
+            <span class="new" id="altCount">0</span>
+        </div>
+        <div class="stat">Distance <span id="altDist">—</span></div>
+        <div class="stat">Est. Time <span id="altTime">—</span></div>
+        <button onclick="switchToAlt()" class="btn-safe">✓ Use Safer Route</button>
+    </div>
+
+    <!-- ── Analytics panel ── -->
+    <div id="analyticsPanel" class="analytics-panel">
+        <div class="panel-title">📈 Detection Trend</div>
+        <canvas id="trendChart"></canvas>
+        <div class="analytics-stats">
+            <div class="mini-stat"><span class="val" id="statTotal">0</span><span class="lbl">Total</span></div>
+            <div class="mini-stat"><span class="val" id="statAI">0</span><span class="lbl">AI Detected</span></div>
+            <div class="mini-stat"><span class="val" id="statManual">0</span><span class="lbl">Manual</span></div>
+        </div>
+    </div>
+
+    <div class="btn-row">
+        <button onclick="resetRoute()" class="btn-primary">↻ Reset</button>
+        <button onclick="goRoute()" class="btn-safe" id="btnGo" style="display:none">▶ Go</button>
+    </div>
+
+    <div class="status" id="statusText">Waiting for route...</div>
+</div>
+
+<div id="map"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+    // ═══════════════════════════════════════════
+    // MAP SETUP
+    // ═══════════════════════════════════════════
+    var map = L.map('map').setView([{{ center_lat }}, {{ center_lon }}], 14);
+
+    var osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    var markersLayer = L.layerGroup().addTo(map);
+    var routeLayer   = L.layerGroup().addTo(map);
+    var heatLayer    = null;
+
+    var startPoint      = null;
+    var endPoint        = null;
+    var currentPolyline = null;
+    var altPolyline     = null;
+    var lastAltData     = null;
+    var reportMode      = false;
+    var darkMapActive   = false;
+    var heatmapActive   = false;
+    var analyticsOpen   = false;
+    var trendChart      = null;
+    var currentFilter   = "";
+    var cachedPotholes  = [];
+
+    // ═══════════════════════════════════════════
+    // TOAST NOTIFICATIONS
+    // ═══════════════════════════════════════════
+    function showToast(msg, duration) {
+        duration = duration || 2500;
+        var t = document.getElementById("toast");
+        t.innerText = msg;
+        t.classList.add("show");
+        setTimeout(function() { t.classList.remove("show"); }, duration);
+    }
+
+    // ═══════════════════════════════════════════
+    // ADDRESS SEARCH (Nominatim)
+    // ═══════════════════════════════════════════
+    var searchTimers = {};
+
+    function setupSearch(inputId, suggestId, callback) {
+        var input   = document.getElementById(inputId);
+        var suggest = document.getElementById(suggestId);
+
+        input.addEventListener("input", function() {
+            clearTimeout(searchTimers[inputId]);
+            var q = input.value.trim();
+            if (q.length < 3) { suggest.style.display = "none"; return; }
+
+            searchTimers[inputId] = setTimeout(function() {
+                var bounds = map.getBounds();
+                var viewbox = bounds.getWest() + "," + bounds.getNorth() + "," + bounds.getEast() + "," + bounds.getSouth();
+
+                fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&bounded=0&viewbox=" + viewbox + "&q=" + encodeURIComponent(q), {
+                    headers: { "Accept-Language": "en" }
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(results) {
+                    suggest.innerHTML = "";
+                    if (!results.length) { suggest.style.display = "none"; return; }
+                    results.forEach(function(r) {
+                        var div = document.createElement("div");
+                        div.textContent = r.display_name;
+                        div.onclick = function() {
+                            input.value = r.display_name.split(",")[0];
+                            suggest.style.display = "none";
+                            callback([parseFloat(r.lat), parseFloat(r.lon)]);
+                        };
+                        suggest.appendChild(div);
+                    });
+                    suggest.style.display = "block";
+                })
+                .catch(function() { suggest.style.display = "none"; });
+            }, 400);
+        });
+
+        document.addEventListener("click", function(e) {
+            if (!input.contains(e.target) && !suggest.contains(e.target)) {
+                suggest.style.display = "none";
+            }
+        });
+    }
+
+    setupSearch("searchStart", "suggestStart", function(latlng) {
+        if (startPoint) {
+            routeLayer.eachLayer(function(l) {
+                if (l._popup && l._popup._content === "Start") routeLayer.removeLayer(l);
+            });
+        }
+        startPoint = latlng;
+        L.marker(startPoint).addTo(routeLayer).bindPopup("Start").openPopup();
+        map.setView(startPoint, 14);
+        checkGoButton();
+    });
+
+    setupSearch("searchEnd", "suggestEnd", function(latlng) {
+        if (endPoint) {
+            routeLayer.eachLayer(function(l) {
+                if (l._popup && l._popup._content === "Destination") routeLayer.removeLayer(l);
+            });
+        }
+        endPoint = latlng;
+        L.marker(endPoint).addTo(routeLayer).bindPopup("Destination").openPopup();
+        map.setView(endPoint, 14);
+        checkGoButton();
+    });
+
+    function checkGoButton() {
+        document.getElementById("btnGo").style.display = (startPoint && endPoint) ? "block" : "none";
+    }
+
+    function goRoute() {
+        if (startPoint && endPoint) calculateRoute();
+    }
+
+    // ═══════════════════════════════════════════
+    // LOAD POTHOLE MARKERS
+    // ═══════════════════════════════════════════
+    function loadData() {
+        var url = "/data";
+        if (currentFilter) url += "?since=" + currentFilter;
+
+        fetch(url)
+            .then(function(res) {
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return res.json();
+            })
+            .then(function(data) {
+                if (!Array.isArray(data)) return;
+
+                cachedPotholes = data;
+                markersLayer.clearLayers();
+
+                var sum = 0;
+                data.forEach(function(p) { sum += p.count; });
+                document.getElementById("totalReports").innerText = sum;
+
+                data.forEach(function(p) {
+                    try {
+                        if (!p.latitude || !p.longitude) return;
+
+                        var color     = p.count >= 3 ? "#ef4444" : p.count >= 2 ? "#f97316" : "#eab308";
+                        var glowColor = p.count >= 3 ? "rgba(239,68,68,0.4)" : p.count >= 2 ? "rgba(249,115,22,0.3)" : "rgba(234,179,8,0.25)";
+
+                        var circle = L.circleMarker([p.latitude, p.longitude], {
+                            radius: 9,
+                            fillColor: color,
+                            color: glowColor,
+                            weight: 4,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        });
+
+                        var severity = p.count >= 3 ? "High" : p.count >= 2 ? "Medium" : "Low";
+                        circle.bindPopup(
+                            '<div class="popup-title">\uD83D\uDD73\uFE0F Pothole Cluster</div>' +
+                            '<b>Reports:</b> ' + p.count + ' &nbsp;|&nbsp; <b>Severity:</b> ' + severity + '<br>' +
+                            '<b>Confidence:</b> ' + (p.avg_confidence * 100).toFixed(0) + '%<br>' +
+                            '<b>Last seen:</b> ' + p.latest
+                        );
+
+                        circle.addTo(markersLayer);
+                    } catch (e) { /* skip */ }
+                });
+
+                if (heatmapActive) updateHeatLayer(data);
+            })
+            .catch(function(err) {
+                console.error("Error loading potholes:", err);
+            });
+    }
+
+    // ═══════════════════════════════════════════
+    // HEATMAP
+    // ═══════════════════════════════════════════
+    function updateHeatLayer(data) {
+        if (heatLayer) map.removeLayer(heatLayer);
+        var pts = [];
+        data.forEach(function(p) {
+            pts.push([p.latitude, p.longitude, p.count * 0.4]);
+        });
+        heatLayer = L.heatLayer(pts, {
+            radius: 30,
+            blur: 20,
+            maxZoom: 17,
+            gradient: { 0.2: "#818cf8", 0.5: "#f97316", 0.8: "#ef4444", 1.0: "#dc2626" }
+        }).addTo(map);
+    }
+
+    function toggleHeatmap() {
+        heatmapActive = !heatmapActive;
+        document.getElementById("btnHeatmap").classList.toggle("active", heatmapActive);
+
+        if (heatmapActive) {
+            updateHeatLayer(cachedPotholes);
+            showToast("Heatmap enabled");
+        } else {
+            if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+            showToast("Heatmap disabled");
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // REPORT MODE
+    // ═══════════════════════════════════════════
+    function toggleReportMode() {
+        reportMode = !reportMode;
+        document.getElementById("btnReport").classList.toggle("active", reportMode);
+        document.body.classList.toggle("report-mode", reportMode);
+
+        if (reportMode) {
+            showToast("📍 Click on the map to report a pothole");
+            document.getElementById("statusText").innerText = "Report mode: click map to mark pothole";
+        } else {
+            document.getElementById("statusText").innerText = "Waiting for route...";
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // DARK MAP TOGGLE
+    // ═══════════════════════════════════════════
+    function toggleDarkMap() {
+        darkMapActive = !darkMapActive;
+        document.getElementById("btnDarkMap").classList.toggle("active", darkMapActive);
+
+        var tilePane = document.querySelector(".leaflet-tile-pane");
+        if (darkMapActive) {
+            tilePane.classList.add("dark-tiles");
+            showToast("Dark map enabled");
+        } else {
+            tilePane.classList.remove("dark-tiles");
+            showToast("Light map restored");
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // TIME FILTER
+    // ═══════════════════════════════════════════
+    function applyTimeFilter() {
+        currentFilter = document.getElementById("timeFilter").value;
+        loadData();
+        showToast(currentFilter ? "Showing: last " + currentFilter : "Showing: all time");
+    }
+
+    // ═══════════════════════════════════════════
+    // ANALYTICS CHART
+    // ═══════════════════════════════════════════
+    function toggleAnalytics() {
+        analyticsOpen = !analyticsOpen;
+        var panel = document.getElementById("analyticsPanel");
+        document.getElementById("btnChart").classList.toggle("active", analyticsOpen);
+        panel.style.display = analyticsOpen ? "block" : "none";
+
+        if (analyticsOpen) loadAnalytics();
+    }
+
+    function loadAnalytics() {
+        fetch("/analytics")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                document.getElementById("statTotal").innerText  = data.total || 0;
+                document.getElementById("statAI").innerText     = data.sources.ai || 0;
+                document.getElementById("statManual").innerText = data.sources.manual || 0;
+
+                var labels = [], values = [];
+                (data.daily || []).forEach(function(d) {
+                    labels.push(d.date.slice(5));
+                    values.push(d.count);
+                });
+
+                if (trendChart) trendChart.destroy();
+
+                var ctx = document.getElementById("trendChart").getContext("2d");
+                trendChart = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: "Detections",
+                            data: values,
+                            backgroundColor: "rgba(99,102,241,0.5)",
+                            borderColor: "#818cf8",
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: {
+                                ticks: { color: "#64748b", font: { size: 10 } },
+                                grid: { display: false }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: "#64748b", font: { size: 10 }, stepSize: 1 },
+                                grid: { color: "rgba(255,255,255,0.04)" }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(function(err) { console.error("Analytics error:", err); });
+    }
+
+    // ═══════════════════════════════════════════
+    // MAP CLICK HANDLING
+    // ═══════════════════════════════════════════
+    map.on("click", function(e) {
+
+        // ── Report mode: submit pothole ──
+        if (reportMode) {
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+
+            document.getElementById("statusText").innerText = "Reporting pothole...";
+
+            fetch("/report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ latitude: lat, longitude: lng })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (res.status === "ok") {
+                    showToast("✅ Pothole reported & snapped to road");
+                    loadData();
+                    if (analyticsOpen) loadAnalytics();
+                } else {
+                    showToast("❌ " + (res.error || "Report failed"));
+                }
+                document.getElementById("statusText").innerText = "Report mode: click map to mark pothole";
+            })
+            .catch(function() {
+                showToast("❌ Network error");
+                document.getElementById("statusText").innerText = "Report mode: click map to mark pothole";
+            });
+
+            return;
+        }
+
+        // ── Normal routing click ──
+        if (!startPoint) {
+            startPoint = [e.latlng.lat, e.latlng.lng];
+            L.marker(startPoint).addTo(routeLayer).bindPopup("Start").openPopup();
+            document.getElementById("searchStart").value = startPoint[0].toFixed(5) + ", " + startPoint[1].toFixed(5);
+            checkGoButton();
+        }
+        else if (!endPoint) {
+            endPoint = [e.latlng.lat, e.latlng.lng];
+            L.marker(endPoint).addTo(routeLayer).bindPopup("Destination").openPopup();
+            document.getElementById("searchEnd").value = endPoint[0].toFixed(5) + ", " + endPoint[1].toFixed(5);
+            checkGoButton();
+            calculateRoute();
+        }
+    });
+
+    // ═══════════════════════════════════════════
+    // ROUTE CALCULATION
+    // ═══════════════════════════════════════════
+    function calculateRoute() {
+        document.getElementById("statusText").innerText = "Calculating route...";
+
+        var controller = new AbortController();
+        var timeout = setTimeout(function() { controller.abort(); }, 15000);
+
+        fetch("/route", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ start: startPoint, destination: endPoint }),
+            signal: controller.signal
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            clearTimeout(timeout);
+
+            if (!data.route || data.route.length === 0) {
+                document.getElementById("statusText").innerText = "Route failed.";
+                return;
+            }
+
+            if (currentPolyline) routeLayer.removeLayer(currentPolyline);
+            if (altPolyline) { routeLayer.removeLayer(altPolyline); altPolyline = null; }
+
+            var potholeCount = data.pothole_count || 0;
+            var color = potholeCount > 3 ? "#ef4444" : (potholeCount > 1 ? "#f97316" : "#4ade80");
+
+            currentPolyline = L.polyline(data.route, {
+                color: color,
+                weight: 5,
+                opacity: 0.85
+            }).addTo(routeLayer);
+
+            document.getElementById("routeCount").innerText = potholeCount;
+            document.getElementById("routeDist").innerText = (data.distance_km || "?") + " km / " + (data.duration_min || "?") + " min";
+
+            var riskText, riskClass;
+            if (potholeCount > 3) { riskText = "HIGH"; riskClass = "risk-high"; }
+            else if (potholeCount > 1) { riskText = "MODERATE"; riskClass = "risk-moderate"; }
+            else { riskText = "LOW"; riskClass = "risk-low"; }
+
+            document.getElementById("riskLevel").innerHTML = '<span class="risk-badge ' + riskClass + '">' + riskText + '</span>';
+
+            // ── Alternative route ──
+            var altDiv = document.getElementById("altInfo");
+            if (data.alternative) {
+                lastAltData = data.alternative;
+
+                altPolyline = L.polyline(data.alternative.route, {
+                    color: "#818cf8",
+                    weight: 4,
+                    dashArray: "10, 8",
+                    opacity: 0.75
+                }).addTo(routeLayer);
+
+                document.getElementById("altCount").innerText      = data.alternative.pothole_count;
+                document.getElementById("primaryCount").innerText   = potholeCount;
+                document.getElementById("altDist").innerText        = data.alternative.distance_km + " km";
+                document.getElementById("altTime").innerText        = data.alternative.duration_min + " min";
+                altDiv.style.display = "block";
+            } else {
+                lastAltData = null;
+                altDiv.style.display = "none";
+            }
+
+            document.getElementById("statusText").innerText = data.alternative
+                ? "⚠ Risky route — safer alternative shown"
+                : "Route ready.";
+        })
+        .catch(function(err) {
+            console.error("Route error:", err);
+            document.getElementById("statusText").innerText = "Route request failed.";
+        });
+    }
+
+    // ═══════════════════════════════════════════
+    // SWITCH TO ALTERNATIVE
+    // ═══════════════════════════════════════════
+    function switchToAlt() {
+        if (!lastAltData) return;
+
+        if (currentPolyline) routeLayer.removeLayer(currentPolyline);
+        if (altPolyline) routeLayer.removeLayer(altPolyline);
+
+        currentPolyline = L.polyline(lastAltData.route, {
+            color: "#4ade80",
+            weight: 5,
+            opacity: 0.85
+        }).addTo(routeLayer);
+
+        document.getElementById("routeCount").innerText = lastAltData.pothole_count;
+        document.getElementById("routeDist").innerText  = lastAltData.distance_km + " km / " + lastAltData.duration_min + " min";
+
+        var riskText, riskClass;
+        if (lastAltData.pothole_count > 3) { riskText = "HIGH"; riskClass = "risk-high"; }
+        else if (lastAltData.pothole_count > 1) { riskText = "MODERATE"; riskClass = "risk-moderate"; }
+        else { riskText = "LOW"; riskClass = "risk-low"; }
+
+        document.getElementById("riskLevel").innerHTML = '<span class="risk-badge ' + riskClass + '">' + riskText + '</span>';
+        document.getElementById("statusText").innerText = "✅ Using safer route.";
+        document.getElementById("altInfo").style.display = "none";
+
+        altPolyline = null;
+        lastAltData = null;
+    }
+
+    // ═══════════════════════════════════════════
+    // RESET
+    // ═══════════════════════════════════════════
+    function resetRoute() {
+        routeLayer.clearLayers();
+        startPoint = null;
+        endPoint   = null;
+        currentPolyline = null;
+        altPolyline     = null;
+        lastAltData     = null;
+
+        document.getElementById("routeCount").innerText = 0;
+        document.getElementById("routeDist").innerText  = "—";
+        document.getElementById("riskLevel").innerHTML   = '<span class="risk-badge risk-low">N/A</span>';
+        document.getElementById("altInfo").style.display  = "none";
+        document.getElementById("statusText").innerText   = "Waiting for route...";
+        document.getElementById("searchStart").value = "";
+        document.getElementById("searchEnd").value   = "";
+        document.getElementById("btnGo").style.display = "none";
+    }
+
+    // ═══════════════════════════════════════════
+    // INIT
+    // ═══════════════════════════════════════════
+    loadData();
+    setInterval(loadData, 5000);
+</script>
+
+</body>
+</html>

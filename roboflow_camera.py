@@ -1,9 +1,17 @@
 import cv2
 import requests
 import base64
+import os
+from dotenv import load_dotenv
 
-API_KEY = "qkAZNqw1IfKmOzokdEqt"
-URL = "https://serverless.roboflow.com/amans-workspace-gwpof/workflows/find-potholes"
+load_dotenv()
+
+API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
+URL = os.environ.get("ROBOFLOW_WORKFLOW_URL", "https://serverless.roboflow.com/amans-workspace-gwpof/workflows/find-potholes")
+
+if not API_KEY:
+    print("⚠️  ROBOFLOW_API_KEY not set. Copy .env.example to .env and add your key.")
+    exit(1)
 
 cap = cv2.VideoCapture(0)
 
