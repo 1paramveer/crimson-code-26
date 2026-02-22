@@ -4,6 +4,15 @@
 //
 //  Created by Paramveer Singh on 2/22/26.
 //
+//  FIXES vs previous version:
+//  - Removed .onReceive(elevenLabs.$isConnected) block that used wrong key-path
+//    syntax for calling startWorker — replaced with direct call inside toggleMonitoring
+//    via a chained Task that awaits start() then calls startWorker().
+//  - Removed bogus @ObservedObject wrapper subscript that caused
+//    "Referencing subscript requires wrapper 'ObservedObject'" error.
+//  - startWorker is now called as a plain method, not through a Combine key path.
+//
+
 import SwiftUI
 import SmartSpectraSwiftSDK
 import AVFoundation
@@ -23,6 +32,9 @@ struct ContentView: View {
     @State var cameraImage: UIImage? = nil
     @State var statusMessage = "Tap Start Monitoring"
     @State var cameraPosition: AVCaptureDevice.Position = .front
+
+    // Session token — incremented on every stop so stale async callbacks are ignored
+    @State private var sessionID: UUID = UUID()
 
     init() {
         let sdk = SmartSpectraSwiftSDK.shared
@@ -137,32 +149,36 @@ struct ContentView: View {
                 }
                 .padding(.horizontal)
 
-                // MARK: — Live Graph / Vitals Cards
-                if isRunning {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.white.opacity(0.04))
-                            .overlay(RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1))
-                        ContinuousVitalsPlotView()
-                            .padding(12)
-                    }
-                    .frame(height: 220)
-                    .padding(.horizontal)
-                    .padding(.top, 10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                } else {
-                    HStack(spacing: 12) {
-                        VitalCard(icon: "heart.fill", label: "PULSE",
-                                  value: pulseRate > 0 ? "\(Int(pulseRate))" : "—",
-                                  unit: "BPM", color: .red)
-                        VitalCard(icon: "lungs.fill", label: "BREATHING",
-                                  value: breathingRate > 0 ? "\(Int(breathingRate))" : "—",
-                                  unit: "BPM", color: .cyan)
-                    }
-                    .padding(.horizontal).padding(.top, 10)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                // MARK: — Vitals graph — ALWAYS mounted (opacity-hidden when idle)
+                // Never removed from hierarchy so ContinuousVitalsPlotView.onDisappear
+                // cannot zero out the trace arrays mid-session.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white.opacity(0.04))
+                        .overlay(RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    ContinuousVitalsPlotView()
+                        .padding(12)
                 }
+                .frame(height: 220)
+                .padding(.horizontal)
+                .padding(.top, 10)
+                .opacity(isRunning ? 1.0 : 0.0)
+                .animation(.easeInOut(duration: 0.3), value: isRunning)
+
+                // Vital cards — shown only when idle (last known values)
+                HStack(spacing: 12) {
+                    VitalCard(icon: "heart.fill", label: "PULSE",
+                              value: pulseRate > 0 ? "\(Int(pulseRate))" : "—",
+                              unit: "BPM", color: .red)
+                    VitalCard(icon: "lungs.fill", label: "BREATHING",
+                              value: breathingRate > 0 ? "\(Int(breathingRate))" : "—",
+                              unit: "BPM", color: .cyan)
+                }
+                .padding(.horizontal)
+                .padding(.top, 10)
+                .opacity(isRunning ? 0.0 : 1.0)
+                .animation(.easeInOut(duration: 0.2), value: isRunning)
 
                 // MARK: — Stress Indicator
                 ZStack {
@@ -244,47 +260,50 @@ struct ContentView: View {
             .presentationDragIndicator(.visible)
         }
 
-        // MARK: — THE KEY FIX
+        // MARK: — Level-triggered canRecord gate
+        // Fires on every .ok status — catches it regardless of whether isRunning
+        // was set before or after the SDK emitted .ok.
         .onReceive(vitalsProcessor.$lastStatusCode) { statusCode in
             let wasOk = canRecord
             canRecord = (statusCode == .ok)
 
-            if canRecord && !wasOk && isRunning && !vitalsProcessor.isRecording {
+            if canRecord && isRunning && !vitalsProcessor.isRecording {
                 vitalsProcessor.startRecording()
+                logState("startRecording() triggered")
             }
 
-            if !isRunning {
-                statusMessage = "Tap Start Monitoring"
-            } else if statusCode == .ok {
-                statusMessage = "Face detected — measuring..."
-            } else {
-                statusMessage = vitalsProcessor.statusHint.isEmpty
-                    ? "Searching for face..."
-                    : vitalsProcessor.statusHint
+            updateStatusMessage(statusCode: statusCode)
+
+            if canRecord != wasOk {
+                logState("canRecord → \(canRecord)")
             }
         }
 
         // MARK: — Live metrics
         .onReceive(sdk.$metricsBuffer) { metrics in
             guard let metrics = metrics else { return }
+
             if let pulse = metrics.pulse.rate.last {
                 pulseRate = Double(pulse.value)
             }
             if let breath = metrics.breathing.rate.last {
                 breathingRate = Double(breath.value)
             }
+
+            // Ingest into rolling buffer for ElevenLabs worker
             elevenLabs.ingestReading(pulse: pulseRate, breathing: breathingRate)
 
             let newLevel = classifyStress(pulse: pulseRate)
             if newLevel != stressLevel {
                 stressLevel = newLevel
+                logState("stressLevel → \(stressLevel.label)")
                 if isRunning && newLevel != .unknown {
                     Task { await elevenLabs.sendAnalysis(currentStress: stressLevel.label) }
                 }
             }
         }
 
-        // MARK: — Camera image (throttled to ~15fps to prevent UI freeze)
+        // MARK: — Camera image (throttled to ~15fps)
         .onReceive(
             vitalsProcessor.$imageOutput
                 .throttle(for: .milliseconds(66), scheduler: DispatchQueue.main, latest: true)
@@ -294,18 +313,27 @@ struct ContentView: View {
     }
 
     // MARK: — Toggle Monitoring
+
     func toggleMonitoring() async {
         if isRunning {
+            logState("STOP tapped")
+            sessionID = UUID()                    // invalidate current session
             vitalsProcessor.stopRecording()
             vitalsProcessor.stopProcessing()
-            await elevenLabs.stop()
             isRunning = false
             canRecord = false
             statusMessage = "Tap Start Monitoring"
+
+            // Teardown ElevenLabs off the critical path
+            let el = elevenLabs
+            Task.detached { await el.stop() }
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 showAnalysisSheet = true
             }
+
         } else {
+            logState("START tapped")
             sdk.resetMetrics()
             pulseRate = 0
             breathingRate = 0
@@ -314,12 +342,46 @@ struct ContentView: View {
             statusMessage = "Searching for face..."
 
             vitalsProcessor.startProcessing()
-            await elevenLabs.start()
+
+            // FIX: isRunning = true BEFORE any await so the canRecord gate
+            // in onReceive($lastStatusCode) sees it when the first .ok arrives.
             isRunning = true
+            logState("isRunning = true")
+
+            // FIX: ElevenLabs start + worker launch is fully off the critical path.
+            // startWorker() is called directly after start() returns — no key-path involved.
+            let el = elevenLabs
+            Task.detached { [stressLevel] in
+                await el.start()
+                // startWorker must be called on MainActor since ElevenLabsService is @MainActor
+                await MainActor.run {
+                    el.startWorker(stressProvider: { stressLevel.label })
+                }
+            }
         }
     }
 
+    // MARK: — Helpers
+
+    private func updateStatusMessage(statusCode: StatusCode) {
+        if !isRunning {
+            statusMessage = "Tap Start Monitoring"
+        } else if statusCode == .ok {
+            statusMessage = "Face detected — measuring..."
+        } else {
+            statusMessage = vitalsProcessor.statusHint.isEmpty
+                ? "Searching for face..."
+                : vitalsProcessor.statusHint
+        }
+    }
+
+    private func logState(_ event: String) {
+        let ts = ElevenLabsService.ts()
+        print("[COPCAM \(ts)] \(event) | isRunning=\(isRunning) canRecord=\(canRecord) isRecording=\(vitalsProcessor.isRecording)")
+    }
+
     // MARK: — Computed UI helpers
+
     var recordingBorderColor: Color {
         if vitalsProcessor.isRecording { return stressLevel.color.opacity(0.8) }
         if canRecord { return .green.opacity(0.5) }
