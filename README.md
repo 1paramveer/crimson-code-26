@@ -86,11 +86,9 @@ crimson-code-26/
 
 4. Build and run on a physical iOS device.
 
-## Developers
+## Reflection
 
-- **Paramveer Singh** — [@1paramveer](https://github.com/1paramveer)
-- **Aman Verma** - [@aman-verma-wsu](https://github.com/amanverma-wsu)
-- **Srishanth** - [@SURAKANTISRISHANTHREDDY](https://github.com/SURAKANTISRISHANTHREDDY)
+For a detailed reflection on the hackathon experience — including technical decisions, contributions, and lessons learned — see the [Reflection Document](reflection.md). You can also view the project submission on [Devpost](https://devpost.com/software/health-cam).
 
 <p align="center">
   <i>Built with ❤️ at CrimsonCode 2026 — Washington State University</i>
