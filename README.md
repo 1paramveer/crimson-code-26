@@ -86,6 +86,11 @@ crimson-code-26/
 
 4. Build and run on a physical iOS device.
 
+## Developers
+
+- **Paramveer Singh** — [@1paramveer](https://github.com/1paramveer)
+- **Aman Verma** - [@aman-verma-wsu](https://github.com/amanverma-wsu)
+- **Srishanth** - [@SURAKANTISRISHANTHREDDY](https://github.com/SURAKANTISRISHANTHREDDY)
 
 <p align="center">
   <i>Built with ❤️ at CrimsonCode 2026 — Washington State University</i>
