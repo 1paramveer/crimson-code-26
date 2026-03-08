@@ -86,6 +86,18 @@ crimson-code-26/
 
 4. Build and run on a physical iOS device.
 
+## Team
+
+HealthCam was developed as part of a collaborative team during the **CrimsonCode 2026 Hackathon at Washington State University**.
+
+**Team Members**
+- Paramveer
+- Aman Verma
+- Srishanth
+  
+
+The project was built under typical hackathon conditions where multiple components were developed and integrated rapidly. Team members worked across shared systems and development environments while assembling the final prototype and preparing the demonstration.
+
 ## Reflection
 
 For a detailed reflection on the hackathon experience — including technical decisions, contributions, and lessons learned — see the [Reflection Document](reflection.md). You can also view the project submission on [Devpost](https://devpost.com/software/health-cam).
